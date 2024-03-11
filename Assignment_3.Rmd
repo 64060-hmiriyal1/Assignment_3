@@ -1,0 +1,307 @@
+---
+title: "FML_Assignment3"
+author: "Hruthik M"
+output: 
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}S
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+#loading the libraries
+library(class)
+library(dplyr)
+library(caret)
+library(tidyverse)
+library(gmodels)
+library(reshape2)
+library(e1071)
+```
+#loading dataset
+```{r}
+dataset_ub <-  read.csv("C:/Users/santo/OneDrive/Desktop/Fundamental of machinelearning/Assignment_2/UniversalBank.csv")
+head(dataset_ub)
+```
+```{r}
+#removing unwanted columns i.e ID and Zip code
+dataset_ub1<-dataset_ub[,-1]
+head(dataset_ub1)
+dataset_ub1<-dataset_ub1[,-4]
+head(dataset_ub1)
+#converting personal loan as factor
+dataset_ub1$Personal.Loan=as.factor(dataset_ub1$Personal.Loan)
+
+#running is.na to check if there are any NA values
+head(is.na(dataset_ub1))
+any(is.na(dataset_ub1))
+
+# Converting categorical variable into i.e education into dummy variables
+
+#converting education into character
+education<-as.character(dataset_ub1$Education)
+
+dataset_ub2<-cbind(dataset_ub1[,-6],education)
+head(dataset_ub2)
+
+dummymodel<-dummyVars("~education",data = dataset_ub2)
+educationdummy<-data.frame(predict(dummymodel,dataset_ub2))
+head(educationdummy)
+
+dataset_ub_dummy<-cbind(dataset_ub2[,-12],educationdummy)
+head(dataset_ub_dummy)
+
+#dividing data into training and testing set
+set.seed(555)
+train<-createDataPartition(dataset_ub_dummy$Personal.Loan,p=0.60,list = FALSE)
+trainset<-dataset_ub_dummy[train,]
+nrow(trainset)
+validationset<-dataset_ub_dummy[-train,]
+nrow(validationset)
+testset<-data.frame(Age = 40, Experience = 10, Income = 84, Family = 2, CCAvg = 2,  Mortgage = 0, Securities.Account = 0, CD.Account = 0, Online = 1, 
+      CreditCard = 1,education1 = 0, education2 = 1, education3 = 0)
+
+
+summary(trainset)
+summary(validationset)
+summary(testset)
+```
+#normalizing
+```{r}
+normvar<-c('Age',"Experience","Income","Family","CCAvg","Mortgage","Securities.Account","CD.Account","Online","CreditCard","education1","education2","education3")
+normalization_values<-preProcess(trainset[,normvar],method = c('center','scale'))
+
+trainset.norm<-predict(normalization_values,trainset)
+summary(trainset.norm)
+
+validationset.norm<-predict(normalization_values,validationset)
+summary(validationset.norm)
+
+testset.norm<-predict(normalization_values,testset)
+summary(testset.norm)
+```
+##Question A
+##Create a pivot table for the training data with Online as a column variable, CC as a rowvariable, and Loan as a secondary row variable. The values inside the table should convey the count. In R use functions melt() and cast(), or function table(). In Python, use pandadataframe methods melt() and pivot().
+
+```{r}
+trainset$Personal.Loan <- as.factor(trainset$Personal.Loan)
+
+pivot_table <- table(trainset$CC, trainset$Personal.Loan, trainset$Online)
+
+# Display the pivot table
+head(pivot_table)
+
+#If you want to visualize the pivot table in a more tabular format use data frame function
+pivot_df <- as.data.frame.table(pivot_table)
+head(pivot_df)
+
+```
+##Explanation
+##This code is prints the data stored in trainset, specifically examining relationships between the variables CC, Personal.Loan, and Online through the creation of a pivot table and subsequent conversion to a dataframe for further analysis or visualization.
+
+
+
+##Question B
+##Consider the task of classifying a customer who owns a bank credit card and is actively usingonline banking services. Looking at the pivot table, what is the probability that this customerwill accept the loan offer? [This is the probability of loan acceptance (Loan = 1) conditional onhaving a bank credit card (CC = 1) and being an active user of online banking services (Online = 1)]
+
+```{r}
+pivot_table_loan_cc_online <- table(trainset.norm$Personal.Loan, trainset.norm$CreditCard, trainset.norm$Online)
+
+count_loan_1_cc_1_online_1 <- pivot_table_loan_cc_online[2, 2, 2]
+
+count_cc_1_online_1 <- sum(pivot_table_loan_cc_online[, 2, 2])
+
+probability_loan_acceptance <- count_loan_1_cc_1_online_1 / count_cc_1_online_1
+
+# Output the result
+cat("Probability of loan acceptance given CC = 1 and Online = 1:", probability_loan_acceptance, "\n")
+
+
+```
+##Explanation
+##The provided code calculates the probability of loan acceptance for customers who have an average credit card spending of 1 and are actively using online banking services.
+
+
+
+##Question C
+##Create two separate pivot tables for the training data. One will have Loan (rows) as a function of Online (columns) and the other will have Loan (rows) as a function of CC
+
+```{r}
+# Pivot table for Loan as a function of Online
+table_loan_online <- table(trainset.norm$Personal.Loan, trainset.norm$Online)
+print(table_loan_online)
+
+
+# Pivot table for Loan as a function of CC
+table_loan_cc <- table(trainset.norm$Personal.Loan, trainset.norm$CreditCard)
+print(table_loan_cc)
+
+```
+##Explanation
+##These pivot tables provide valuable insights into the relationships between loan acceptance and the variables Online and CreditCard, respectively. They help in understanding the distribution of loan acceptance based on these factors.
+
+
+
+#Question D
+## Compute the following quantities [P(A | B) means “the probability ofA given B”]:
+#i. P(CC = 1 | Loan = 1) (the proportion of credit card holders among the loan acceptors)
+#ii. P(Online = 1 | Loan = 1)
+#iii. P(Loan = 1) (the proportion of loan acceptors)
+#iv. P(CC = 1 | Loan = 0)
+#v. P(Online = 1 | Loan = 0)
+#vi. P(Loan = 0)
+
+```{r}
+
+# Compute the probabilities
+# i. P(CC = 1 | Loan = 1)
+p_cc_given_loan_1 <- trainset.norm %>%
+filter(Personal.Loan == 1) %>%
+summarize(p_cc_given_loan_1 = mean(CreditCard == 1))
+cat("i. P(CC = 1 | Loan = 1):", p_cc_given_loan_1$p_cc_given_loan_1, "\n")
+
+# ii. P(Online = 1 | Loan = 1)
+p_online_given_loan_1 <- trainset.norm %>%
+filter(Personal.Loan == 1) %>%
+summarize(p_online_given_loan_1 = mean(Online == 1))
+cat("ii. P(Online = 1 | Loan = 1):", p_online_given_loan_1$p_online_given_loan_1, "\n")
+
+
+# iii. P(Loan = 1)
+p_loan_1 <- mean(trainset.norm$Personal.Loan == 1)
+cat("iii. P(Loan = 1):", p_loan_1, "\n")
+
+
+# iv. P(CC = 1 | Loan = 0)
+p_cc_given_loan_0 <- trainset.norm %>%
+filter(Personal.Loan == 0) %>%
+summarize(p_cc_given_loan_0 = mean(CreditCard == 1))
+cat("iv. P(CC = 1 | Loan = 0):", p_cc_given_loan_0$p_cc_given_loan_0, "\n")
+
+# v. P(Online = 1 | Loan = 0)
+p_online_given_loan_0 <- trainset.norm %>%
+filter(Personal.Loan == 0) %>%
+summarize(p_online_given_loan_0 = mean(Online == 1))
+cat("v. P(Online = 1 | Loan = 0):", p_online_given_loan_0$p_online_given_loan_0, "\n")
+
+# vi. P(Loan = 0)
+p_loan_0 <- mean(trainset.norm$Personal.Loan == 0)
+cat("vi. P(Loan = 0):", p_loan_0, "\n")
+
+```
+##Explanation
+#i. P(CC = 1 | Loan = 1) (the proportion of credit card holders among the loan acceptors)= 0
+#ii. P(Online = 1 | Loan = 1)= 0
+#iii. P(Loan = 1) (the proportion of loan acceptors)= 0.096
+#iv. P(CC = 1 | Loan = 0)= 0
+#v. P(Online = 1 | Loan = 0)= 0
+#vi. P(Loan = 0)= 0.904
+
+
+
+##Question E
+## Use the quantities computed above to compute the naive Bayes probability P(Loan = 1 | CC= 1, Online = 1)
+```{r}
+p_loan_1_given_cc_online <- function(cc_1, online_1) {
+p_cc_1 <- p_cc_given_loan_1$p_cc_given_loan_1
+p_online_1 <- p_online_given_loan_1$p_online_given_loan_1
+p_cc_online <- p_cc_1 * p_online_1  # P(CC = 1) * P(Online = 1)
+    
+# Using Bayes' theorem
+numerator <- p_cc_1 * p_online_1 * p_loan_1
+denominator <- p_cc_online
+p_loan_1_given_cc_online <- numerator / denominator
+  
+return(p_loan_1_given_cc_online)
+}
+
+p_loan_1_given_cc_online <- p_loan_1_given_cc_online(cc_1 = 1, online_1 = 1)
+```
+
+```{r}
+p_loan_1_given_cc_online <- function(cc_1, online_1) {
+p_cc_1 <- p_cc_given_loan_1$p_cc_given_loan_1
+p_online_1 <- p_online_given_loan_1$p_online_given_loan_1
+p_cc_online <- p_cc_1 * p_online_1  # P(CC = 1) * P(Online = 1)
+  
+# Using Bayes' theorem
+numerator <- p_cc_1 * p_online_1 * p_loan_1
+denominator <- p_cc_online
+p_loan_1_given_cc_online <- numerator / denominator
+  
+return(p_loan_1_given_cc_online)
+}
+
+p_loan_1_given_cc_online <- p_loan_1_given_cc_online(cc_1 = 1, online_1 = 1)
+
+# Output the result
+cat("P(Loan = 1 | CC = 1, Online = 1):", p_loan_1_given_cc_online, "\n")
+
+```
+##Explanation
+#The probability P(Loan = 1 | CC= 1, Online = 1) using naive Bayes is NaN.
+
+
+
+##Question F
+##Compare this value with the one obtained from the pivot table in (B). Which is a more accurate estimate?
+```{r}
+pivot_table_loan_cc_online <- table(trainset.norm$Personal.Loan, trainset.norm$CreditCard, trainset.norm$Online)
+
+count_loan_1_cc_1_online_1 <- pivot_table_loan_cc_online[2, 2, 2]
+
+count_cc_1_online_1 <- sum(pivot_table_loan_cc_online[, 2, 2])
+
+p_loan_1_given_cc_online_pivot <- count_loan_1_cc_1_online_1 / count_cc_1_online_1
+
+# Output the result
+cat("P(Loan = 1 | CC = 1, Online = 1) from pivot table:", p_loan_1_given_cc_online_pivot, "\n")
+
+```
+##Explanation
+##In summary, this code computes the probability of loan acceptance given that a customer has a bank credit card and is actively using online banking services, based on counts from a pivot table.
+##The probability using the pivot table is 0.1005587 and the probability using naive bayes is NaN the probability using pivot table is more accurate.
+
+
+##Question G 
+## Which of the entries in this table are needed for computing P(Loan = 1 | CC = 1, Online = 1)? Run naive Bayes on the data. Examine the model output on training data, and find the entry that corresponds to P(Loan = 1 | CC = 1, Online = 1). Compare this to the number you obtained in (E).
+
+```{r}
+count_loan_1_cc_1_online_1 <- pivot_table_loan_cc_online[2, 2, 2]
+count_cc_1_online_1 <- sum(pivot_table_loan_cc_online[, 2, 2])
+
+p_loan_1_given_cc_online_pivot <- count_loan_1_cc_1_online_1 / count_cc_1_online_1
+
+# Output the result
+cat("P(Loan = 1 | CC = 1, Online = 1) from pivot table:", p_loan_1_given_cc_online_pivot, "\n")
+
+#Fit naive Bayes model
+naive_bayes_model <- naiveBayes(Personal.Loan ~ CreditCard + Online, data = trainset.norm)
+
+# print the model output
+print(naive_bayes_model)
+
+#Find the probability P(Loan = 1 | CC = 1, Online = 1) from the model output
+p_loan_1_given_cc_online_model <- naive_bayes_model$table$Personal.Loan[2, "Yes"]
+
+# Output the result
+cat("P(Loan = 1 | CC = 1, Online = 1) from naive Bayes model:", p_loan_1_given_cc_online_model, "\n")
+
+```
+
+
+##Explanation
+#This code calculates the probability of loan acceptance given that a customer has a bank credit card and is actively using online banking services using both a pivot table approach and a Naive Bayes model, providing the results from both methods.
+##When we compare the solution with value obtained in "Question E".The solution obtained in Question G is more accurate than value obtained in the Question E.
+
+
+
+
+
+
+
+
+
+
+
